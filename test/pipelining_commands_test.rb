@@ -128,3 +128,24 @@ test "KEYS in a pipeline" do |r|
 
   assert ["key"] == result.first
 end
+
+test "GET in a pipeline returns a value proxy" do |r|
+  r.set("key","value")
+  @return = nil
+  r.pipelined do
+    @return = r.get("key")
+  end
+  assert "value" == @return
+end
+
+test "accessing return value in a pipeline raises an exception" do |r|
+  r.set("key","value")
+  @return = nil
+  assert_raise Redis::Pipeline::UnexecutedRequest do
+    r.pipelined do
+      @return = r.get("key")
+      @return == "this should raise"
+    end
+  end
+end
+

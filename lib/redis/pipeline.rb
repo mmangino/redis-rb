@@ -31,8 +31,13 @@ class Redis
       # the connection is gone.
       @shutdown = true if command.first == :shutdown
       @commands << command
-      @blocks << block
-      nil
+      proxy = PipelineResult.new
+      @blocks << Proc.new do |result| 
+        return_value = block.nil? ? result : block.call(result)
+        proxy.result = return_value
+        return_value
+      end 
+      proxy
     end
 
     def call_pipeline(pipeline, options = {})
@@ -45,6 +50,37 @@ class Redis
     def without_reconnect(&block)
       @without_reconnect = true
       yield
+    end
+    class UnexecutedRequest < StandardError; end
+
+    class PipelineResult
+      instance_methods.each { |m| undef_method m unless m =~ /(^__|^nil\?$|^send$|proxy_|^respond_to\?$|^new|object_id$)/ }
+      def initialize
+        @result     = nil
+        @result_set = false
+      end
+
+      def result=(result_object)
+        @result_set = true
+        @result = result_object
+      end
+
+
+      def respond_to?(name)
+        super || @result.respond_to?(name)
+      end
+
+      def ===(other)
+        other === @result
+      end
+
+      def method_missing(name,*args,&proc)
+        if !@result_set
+          raise UnexecutedRequest.new("You may not access the result until the pipeline has been executed")
+        else
+          @result.send(name,*args,&proc)
+        end
+      end
     end
   end
 end
